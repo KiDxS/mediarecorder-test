@@ -1,0 +1,103 @@
+<script>
+    // Global variables for recorder and state
+    let mediaRecorder;
+    let chunks = [];
+    let recordingStream;
+    let isRecording = false;
+  
+    // Function to start recording
+    function startRecording() {
+      if (isRecording) return;
+      
+      // Reset chunks
+      chunks = [];
+  
+      // Access user's microphone
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(function(stream) {
+          recordingStream = stream;
+          // Create MediaRecorder instance
+          mediaRecorder = new MediaRecorder(stream);
+  
+          // Event handler for data available
+          mediaRecorder.ondataavailable = function(event) {
+            chunks.push(event.data);
+          };
+  
+          // Event handler for recording stop
+          mediaRecorder.onstop = function() {
+            // Enable the download button when recording stops
+            document.getElementById('downloadButton').disabled = false;
+            
+            // Stop all tracks in the stream
+            recordingStream.getTracks().forEach(track => track.stop());
+            isRecording = false;
+            
+            // Update button text
+            document.getElementById('recordButton').textContent = 'Start Recording';
+          };
+  
+          // Start recording
+          mediaRecorder.start();
+          isRecording = true;
+          
+          // Update button text
+          document.getElementById('recordButton').textContent = 'Stop Recording';
+          
+          // Disable download button during recording
+          document.getElementById('downloadButton').disabled = true;
+        })
+        .catch(function(err) {
+          console.error('Error accessing microphone:', err);
+        });
+    }
+  
+    // Function to stop recording
+    function stopRecording() {
+      if (!isRecording || !mediaRecorder) return;
+      mediaRecorder.stop();
+    }
+  
+    // Function to toggle recording
+    function toggleRecording() {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+  
+    // Function to download the recorded audio
+    function downloadRecording() {
+      if (chunks.length === 0) {
+        console.error('No recording available to download');
+        return;
+      }
+      
+      // Combine data chunks into a single Blob
+      const blob = new Blob(chunks, { type: 'audio/mp3' });
+      
+      // Create a URL for the blob
+      const url = URL.createObjectURL(blob);
+      
+      // Create a temporary link and trigger download
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = 'recording.mp3';
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    }
+  </script>
+  
+  <!-- Add UI controls -->
+  <div>
+    <button id="recordButton" onclick="toggleRecording()">Start Recording</button>
+    <button id="downloadButton" onclick="downloadRecording()" disabled>Download Recording</button>
+  </div>
