@@ -1,63 +1,168 @@
-<script>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Recorder</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    button {
+      padding: 12px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      background-color: #4285f4;
+      color: white;
+      transition: background-color 0.2s;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) {
+      background-color: #3367d6;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #f0f0f0;
+      border-radius: 8px;
+    }
+    .recording-indicator {
+      display: none;
+      color: red;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Voice Recorder</h1>
+  <p>Record and download audio from your device</p>
+  
+  <div class="controls">
+    <button id="recordButton">Start Recording</button>
+    <button id="downloadButton" disabled>Download Recording</button>
+  </div>
+  
+  <div class="status" id="status">Ready to record</div>
+  <div class="recording-indicator" id="recordingIndicator">● RECORDING</div>
+  
+  <script>
     // Global variables for recorder and state
     let mediaRecorder;
-    let chunks = [];
+    let audioChunks = [];
     let recordingStream;
     let isRecording = false;
-  
+    
+    // DOM elements
+    const recordButton = document.getElementById('recordButton');
+    const downloadButton = document.getElementById('downloadButton');
+    const statusElement = document.getElementById('status');
+    const recordingIndicator = document.getElementById('recordingIndicator');
+    
+    // Add event listeners
+    recordButton.addEventListener('click', toggleRecording);
+    downloadButton.addEventListener('click', downloadRecording);
+    
     // Function to start recording
     function startRecording() {
       if (isRecording) return;
       
       // Reset chunks
-      chunks = [];
-  
-      // Access user's microphone
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(function(stream) {
-          recordingStream = stream;
-          // Create MediaRecorder instance
-          mediaRecorder = new MediaRecorder(stream);
-  
-          // Event handler for data available
-          mediaRecorder.ondataavailable = function(event) {
-            chunks.push(event.data);
-          };
-  
-          // Event handler for recording stop
-          mediaRecorder.onstop = function() {
-            // Enable the download button when recording stops
-            document.getElementById('downloadButton').disabled = false;
+      audioChunks = [];
+      
+      // Update UI
+      statusElement.textContent = 'Requesting microphone access...';
+      
+      // Check for getUserMedia support and handle permissions
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(function(stream) {
+            recordingStream = stream;
             
-            // Stop all tracks in the stream
-            recordingStream.getTracks().forEach(track => track.stop());
-            isRecording = false;
+            // Create MediaRecorder instance
+            // Use a MIME type that's more widely supported on mobile
+            try {
+              mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            } catch (e) {
+              // Fallback to default if the specified MIME type isn't supported
+              mediaRecorder = new MediaRecorder(stream);
+            }
             
-            // Update button text
-            document.getElementById('recordButton').textContent = 'Start Recording';
-          };
-  
-          // Start recording
-          mediaRecorder.start();
-          isRecording = true;
-          
-          // Update button text
-          document.getElementById('recordButton').textContent = 'Stop Recording';
-          
-          // Disable download button during recording
-          document.getElementById('downloadButton').disabled = true;
-        })
-        .catch(function(err) {
-          console.error('Error accessing microphone:', err);
-        });
+            // Event handler for data available
+            mediaRecorder.ondataavailable = function(event) {
+              if (event.data.size > 0) {
+                audioChunks.push(event.data);
+              }
+            };
+            
+            // Event handler for recording stop
+            mediaRecorder.onstop = function() {
+              // Enable the download button when recording stops
+              downloadButton.disabled = false;
+              
+              // Stop all tracks in the stream
+              recordingStream.getTracks().forEach(track => track.stop());
+              
+              isRecording = false;
+              
+              // Update UI
+              recordButton.textContent = 'Start Recording';
+              statusElement.textContent = 'Recording stopped - ready to download';
+              recordingIndicator.style.display = 'none';
+            };
+            
+            // Start recording
+            // Request data every 1 second to ensure we capture chunks properly
+            mediaRecorder.start(1000);
+            isRecording = true;
+            
+            // Update UI
+            recordButton.textContent = 'Stop Recording';
+            statusElement.textContent = 'Recording in progress...';
+            recordingIndicator.style.display = 'block';
+            downloadButton.disabled = true;
+          })
+          .catch(function(err) {
+            console.error('Error accessing microphone:', err);
+            statusElement.textContent = 'Error: ' + (err.message || 'Could not access microphone');
+            
+            // On Android, we may need to show a more specific error
+            if (err.name === 'NotAllowedError') {
+              statusElement.textContent = 'Microphone access denied. Please grant permission and try again.';
+            }
+          });
+      } else {
+        statusElement.textContent = 'Error: Your browser does not support audio recording';
+      }
     }
-  
+    
     // Function to stop recording
     function stopRecording() {
       if (!isRecording || !mediaRecorder) return;
-      mediaRecorder.stop();
+      
+      try {
+        mediaRecorder.stop();
+        statusElement.textContent = 'Processing recording...';
+      } catch (err) {
+        console.error('Error stopping recording:', err);
+        statusElement.textContent = 'Error stopping recording: ' + err.message;
+      }
     }
-  
+    
     // Function to toggle recording
     function toggleRecording() {
       if (isRecording) {
@@ -66,16 +171,20 @@
         startRecording();
       }
     }
-  
+    
     // Function to download the recorded audio
     function downloadRecording() {
-      if (chunks.length === 0) {
-        console.error('No recording available to download');
+      if (audioChunks.length === 0) {
+        statusElement.textContent = 'No recording available to download';
         return;
       }
       
+      // Determine the best MIME type based on browser support
+      // audio/webm is better supported on mobile devices
+      const mimeType = 'audio/webm';
+      
       // Combine data chunks into a single Blob
-      const blob = new Blob(chunks, { type: 'audio/mp3' });
+      const blob = new Blob(audioChunks, { type: mimeType });
       
       // Create a URL for the blob
       const url = URL.createObjectURL(blob);
@@ -84,8 +193,14 @@
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = 'recording.mp3';
+      a.download = 'recording.webm';
       document.body.appendChild(a);
+      
+      // On Android, some browsers have issues with programmatic downloads
+      // Show a message and make the download more user-friendly
+      statusElement.textContent = 'Download started. If nothing happens, tap and hold the Download button and select "Save link".';
+      
+      // Attempt to trigger the download automatically
       a.click();
       
       // Clean up
@@ -95,9 +210,5 @@
       }, 100);
     }
   </script>
-  
-  <!-- Add UI controls -->
-  <div>
-    <button id="recordButton" onclick="toggleRecording()">Start Recording</button>
-    <button id="downloadButton" onclick="downloadRecording()" disabled>Download Recording</button>
-  </div>
+</body>
+</html>
